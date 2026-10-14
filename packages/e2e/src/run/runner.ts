@@ -814,7 +814,8 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
     const workerConfigPath = options.tests === undefined ? config.configPath : undefined;
     const inProcess = workerConfigPath === undefined;
     const runWorkers = inProcess ? 1 : config.workers;
-    const maxDuration = options.maxDuration ?? config.maxDuration;
+    // `e2e explore` bounds itself with its own `--timeout`.
+    const maxDuration = options.maxDuration ?? (options.tests === undefined ? config.maxDuration : undefined);
 
     // Provisioning: an engine that must fetch something onto this machine (a
     // first-run browser download) does it here, once per target, before the

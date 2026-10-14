@@ -231,6 +231,7 @@ dispatched, the running tests end as `interrupted`, and the tests not
 started are skipped with cause `time-limit`. The run records a
 `RUN_TIMEOUT` error and exits 1. `--last-failed` runs the interrupted and
 skipped tests next. `--max-duration <ms>` overrides it for one run.
+`e2e explore` ignores it and keeps its own `--timeout`.
 
 ## targets
 

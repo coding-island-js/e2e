@@ -1468,7 +1468,8 @@ export interface E2EConfig {
   /**
    * Wall-clock budget for running the tests, in milliseconds; default none.
    * Once spent, the running tests end as `interrupted`, the rest are skipped,
-   * and the run fails with `RUN_TIMEOUT`. `--max-duration` overrides it.
+   * and the run fails with `RUN_TIMEOUT`. `--max-duration` overrides it;
+   * `e2e explore` keeps its own `--timeout`.
    */
   maxDuration?: number;
   /** Parallel workers, 1 through 1024; default 1 in CI, else half the cores. An engine may cap it lower. */
