@@ -131,6 +131,14 @@ export function failureLimitSkip(failures: number, limit: number): SkipInfo {
   };
 }
 
+/** Skip info for the work a run stopped at its time limit never started. */
+export function timeLimitSkip(maxDuration: number): SkipInfo {
+  return {
+    cause: 'time-limit',
+    reason: `run stopped at its time limit of ${maxDuration} ms (maxDuration)`,
+  };
+}
+
 /**
  * The skip for work an interrupt reached before it started: the skip the
  * interrupt carried as its reason (a run stopped at its failure limit says

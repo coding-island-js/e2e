@@ -42,7 +42,7 @@ import { wordmarkBanner } from './wordmark.ts';
  */
 const pc = picocolors.createColors(true);
 
-/** A count of at least one, for `--max-failures`. */
+/** An integer of at least one, for `--max-failures` and `--max-duration`. */
 function parsePositiveInt(value: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1) throw new InvalidArgumentError('must be a positive integer');
@@ -587,6 +587,7 @@ function createProgram(version: string, telemetry: Telemetry): Command {
     .option('--workers <n>', 'parallel workers (default: from the config)', parseNonNegativeInt)
     .option('--retries <n>', 'retries per failing test (default: from the config)', parseNonNegativeInt)
     .option('--max-failures <n>', 'stop the run once this many tests have failed; the rest are skipped', parsePositiveInt)
+    .option('--max-duration <ms>', 'stop the run once it has spent this many milliseconds running tests; the rest are skipped (default: maxDuration in the config)', parsePositiveInt)
     .option('--repeat-each <n>', 'run every selected test this many times, each run its own result (pair with --no-cache to exercise the model each time)', parsePositiveInt)
     .option('--no-cache', 'run with the replay cache off, whatever the config says')
     .option('--strict-cache', 'fail a step whose recording no longer replays (REPLAY_STALE) instead of handing it to the agent; never writes the cache')
@@ -616,6 +617,7 @@ function createProgram(version: string, telemetry: Telemetry): Command {
           'e2e run --shard 2/3',
           'e2e run --reporter list,junit --workers 4 --retries 2',
           'e2e run --max-failures 3',
+          'e2e run --max-duration 900000',
           'e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts',
           'CI=1 e2e run --strict-cache',
           'e2e run --update-snapshots tests/home.e2e.ts',
@@ -641,6 +643,7 @@ function createProgram(version: string, telemetry: Telemetry): Command {
           retries?: number;
           workers?: number;
           maxFailures?: number;
+          maxDuration?: number;
           repeatEach?: number;
           reporter?: Reporter[];
           output?: string;
@@ -667,6 +670,7 @@ function createProgram(version: string, telemetry: Telemetry): Command {
           retries: options.retries,
           workers: options.workers,
           maxFailures: options.maxFailures,
+          maxDuration: options.maxDuration,
           repeatEach: options.repeatEach,
           reporters: options.reporter,
           output: options.output,

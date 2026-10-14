@@ -67,6 +67,8 @@ export interface ResolvedConfig {
   readonly cleanupTimeout: number;
   readonly retries: number;
   readonly failOnSkippedFailure: boolean;
+  /** Milliseconds the run may spend running tests before it stops; undefined for no limit. */
+  readonly maxDuration: number | undefined;
   readonly workers: number;
   /** Host store every produced artifact is handed to; undefined keeps files local only. */
   readonly artifactStore: ArtifactStore | undefined;
@@ -161,6 +163,7 @@ const TOP_LEVEL_KEYS = new Set([
   'cleanupTimeout',
   'retries',
   'failOnSkippedFailure',
+  'maxDuration',
   'workers',
   'artifacts',
   'output',
@@ -261,6 +264,7 @@ export function resolveConfig(
   const actionTimeout = positiveInt(raw.actionTimeout, 'actionTimeout', 'milliseconds') ?? 30_000;
   const assertionTimeout = positiveInt(raw.assertionTimeout, 'assertionTimeout', 'milliseconds') ?? 5_000;
   const cleanupTimeout = positiveInt(raw.cleanupTimeout, 'cleanupTimeout', 'milliseconds') ?? 30_000;
+  const maxDuration = positiveInt(raw.maxDuration, 'maxDuration', 'milliseconds');
 
   // CLI overrides obey the same bounds as the config keys they replace: a
   // `--workers 0` would otherwise plan work no worker can ever take.
@@ -304,6 +308,7 @@ export function resolveConfig(
     cleanupTimeout,
     retries,
     failOnSkippedFailure,
+    maxDuration,
     workers,
     artifactStore,
     output,
@@ -980,11 +985,13 @@ function computeConfigDigest(
   // reporter object changes nothing about what a run records, so it never
   // enters the digest either; the built-in ids digest as they always have,
   // so adding a reporter to a config leaves its cache valid.
-  // `failOnSkippedFailure` decides only the exit code, never what runs.
+  // `failOnSkippedFailure` decides only the exit code, never what runs, and
+  // `maxDuration` only when the run stops.
   // `targets` digest by declaration below and never enter the clone: an
   // engine holds `secrets.get()` handles, which refuse to serialize.
   const {
     failOnSkippedFailure: _failOnSkippedFailure,
+    maxDuration: _maxDuration,
     artifacts: _artifacts,
     output: _output,
     trace: _trace,

@@ -26,6 +26,7 @@ import {
   nonRunResult,
   pairResult,
   setupFailedSkip,
+  timeLimitSkip,
   unstartedResult,
   type TargetWorkPlan,
   type WorkUnit,
@@ -53,6 +54,11 @@ export interface SchedulerEvents {
    * the count that tripped it.
    */
   onFailureLimit?(failures: number, limit: number): void;
+  /**
+   * The time limit was reached: the queues were skipped with cause
+   * `time-limit` and every worker is being interrupted.
+   */
+  onTimeLimit?(maxDuration: number): void;
   /** A worker began executing one test-target pair. */
   onTestStart?(start: PairStart, targetName: string): void;
   /** Live step progress of one running pair, identified by test id, agent, and repeat. */
@@ -74,6 +80,8 @@ export interface RunUnitsOptions {
   readonly workers: number;
   /** Failures (failed or timed out results) after which the run stops dispatching and interrupts its workers. */
   readonly maxFailures?: number;
+  /** Milliseconds after which the run stops dispatching and interrupts its workers, counted from the scheduler's start. */
+  readonly maxDuration?: number;
   /** Budget for a worker to finish an in-flight unit after an interrupt. */
   readonly interruptGraceMs: number;
   readonly interruptSignal: AbortSignal;
@@ -342,8 +350,9 @@ class Scheduler {
   /** Failed and timed-out results so far, counted toward `maxFailures`. */
   private failures = 0;
   /**
-   * The skip the work left undone gets once the failure limit stopped the
-   * run; from then on the scheduler interrupts as if the signal had fired.
+   * The skip the work left undone gets once the failure or time limit
+   * stopped the run; from then on the scheduler interrupts as if the signal
+   * had fired.
    */
   private stopSkip: SkipInfo | undefined;
   /** The workers alive when the first one died of an interrupt signal before it was ready; see `excusedSignal`. */
@@ -351,7 +360,7 @@ class Scheduler {
 
   constructor(private readonly options: RunUnitsOptions) {}
 
-  /** Whether dispatch has ended for good: the interrupt signal fired, or the run stopped at its failure limit. */
+  /** Whether dispatch has ended for good: the interrupt signal fired, or the run stopped at its failure or time limit. */
   private get interrupting(): boolean {
     return this.options.interruptSignal.aborted || this.stopSkip !== undefined;
   }
@@ -366,20 +375,31 @@ class Scheduler {
     if (!countsTowardFailureLimit(result.status)) return;
     this.failures += 1;
     const limit = this.options.maxFailures;
-    if (limit !== undefined && this.stopSkip === undefined && this.failures >= limit) this.stopEarly(limit);
+    if (limit === undefined || this.stopSkip !== undefined || this.failures < limit) return;
+    this.stopEarly(failureLimitSkip(this.failures, limit));
+    this.options.events.onFailureLimit?.(this.failures, limit);
+    this.wakeUp();
   }
 
   /**
-   * Stops the run at its failure limit: every queued pair is skipped with the
-   * reason, the runner is told, and the loop wakes to interrupt the workers
-   * the way the interrupt signal would.
+   * Stops the run at its time limit, unless an interrupt or the failure
+   * limit already ended dispatch.
    */
-  private stopEarly(limit: number): void {
-    const skip = failureLimitSkip(this.failures, limit);
+  private timeUp(maxDuration: number): void {
+    if (this.interrupting) return;
+    this.stopEarly(timeLimitSkip(maxDuration));
+    this.options.events.onTimeLimit?.(maxDuration);
+    this.wakeUp();
+  }
+
+  /**
+   * Stops the run at a limit: every queued pair is skipped with `skip`, and
+   * once the caller told the runner and woke the loop, the workers are
+   * interrupted the way the interrupt signal would.
+   */
+  private stopEarly(skip: SkipInfo): void {
     this.stopSkip = skip;
     for (const state of this.targets.values()) this.skipQueues(state, skip);
-    this.options.events.onFailureLimit?.(this.failures, limit);
-    this.wakeUp();
   }
 
   /** The failure limit a unit dispatched now carries, when the run has one. */
@@ -418,6 +438,8 @@ class Scheduler {
     const onInterrupt = (): void => this.wakeUp();
     this.options.interruptSignal.addEventListener('abort', onInterrupt, { once: true });
     this.options.forceSignal.addEventListener('abort', onInterrupt, { once: true });
+    const maxDuration = this.options.maxDuration;
+    const timeLimit = maxDuration === undefined ? undefined : setTimeout(() => this.timeUp(maxDuration), maxDuration);
     try {
       for (;;) {
         this.broadcastInterrupt();
@@ -429,6 +451,7 @@ class Scheduler {
         });
       }
     } finally {
+      clearTimeout(timeLimit);
       this.options.interruptSignal.removeEventListener('abort', onInterrupt);
       this.options.forceSignal.removeEventListener('abort', onInterrupt);
       await this.drain();
@@ -444,7 +467,7 @@ class Scheduler {
   /**
    * Stops dispatch for good and reports every pair no worker has started:
    * the queues, and the unit a worker still starting was handed. A run
-   * stopped at its failure limit skipped its queues with that reason when it
+   * stopped at its failure or time limit skipped its queues with that reason when it
    * stopped and tells the workers why, so the pairs they have not started
    * carry it too; a plain interrupt skips them as interrupted before they
    * started, the skip `--last-failed` reads as work to run again.

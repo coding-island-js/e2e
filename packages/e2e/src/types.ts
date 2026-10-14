@@ -1465,6 +1465,12 @@ export interface E2EConfig {
   retries?: number;
   /** Fail the run when a test skips a retry after an earlier failed attempt; default false. */
   failOnSkippedFailure?: boolean;
+  /**
+   * Wall-clock budget for running the tests, in milliseconds; default none.
+   * Once spent, the running tests end as `interrupted`, the rest are skipped,
+   * and the run fails with `RUN_TIMEOUT`. `--max-duration` overrides it.
+   */
+  maxDuration?: number;
   /** Parallel workers, 1 through 1024; default 1 in CI, else half the cores. An engine may cap it lower. */
   workers?: number;
   /** `{ store }` hands every artifact to a host store as it is produced. */

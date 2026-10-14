@@ -30,6 +30,7 @@ import {
   errorMessage,
   exitCodeForCategory,
   serializeError,
+  TestError,
   type ErrorPhase,
 } from '../internal/errors.ts';
 import { loadAiSdk } from '../agent/ai-sdk.ts';
@@ -107,6 +108,13 @@ export interface RunOptions {
    * `failure-limit`, and the exit code is the failures' own.
    */
   maxFailures?: number | undefined;
+  /**
+   * Stops the run once it has spent this many milliseconds running tests
+   * (`--max-duration`), over the config's `maxDuration`: the tests running
+   * end as interrupted, the rest are skipped with cause `time-limit`, the
+   * run records a `RUN_TIMEOUT` error, and the exit code is 1.
+   */
+  maxDuration?: number | undefined;
   /**
    * Runs every selected test this many times (`--repeat-each`), each run a
    * result of its own with `repeat` 0 through `n - 1`. Setup tests run once.
@@ -481,6 +489,22 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
   };
 
   /**
+   * The time limit was reached: the scheduler stops the run as it does at
+   * the failure limit, and the run fails with `RUN_TIMEOUT`, never 130.
+   */
+  const stopAtTimeLimit = (maxDuration: number): void => {
+    stoppedEarly = true;
+    recordRunError({
+      error: serializeError(
+        new TestError(
+          'RUN_TIMEOUT',
+          `run stopped at its time limit of ${maxDuration} ms (maxDuration): the running tests end as interrupted, the rest are skipped`,
+        ),
+      ),
+    });
+  };
+
+  /**
    * The exit code is a fold over run state — every result and serial group, every run error,
    * the interrupt — never threaded through by hand. A run error recorded
    * anywhere, including during teardown or the report write, reaches the exit
@@ -790,6 +814,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
     const workerConfigPath = options.tests === undefined ? config.configPath : undefined;
     const inProcess = workerConfigPath === undefined;
     const runWorkers = inProcess ? 1 : config.workers;
+    const maxDuration = options.maxDuration ?? config.maxDuration;
 
     // Provisioning: an engine that must fetch something onto this machine (a
     // first-run browser download) does it here, once per target, before the
@@ -914,6 +939,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
         plans,
         workers: runWorkers,
         ...(options.maxFailures === undefined ? {} : { maxFailures: options.maxFailures }),
+        ...(maxDuration === undefined ? {} : { maxDuration }),
         spawn,
         interruptGraceMs: config.timeout + config.cleanupTimeout,
         interruptSignal: interrupted,
@@ -931,6 +957,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
           onRunError: recordRunError,
           onRunAbort: abortRun,
           onFailureLimit: stopEarly,
+          onTimeLimit: stopAtTimeLimit,
           onTestStart: (start, targetName) =>
             emit({ type: 'test-started', ...start, target: targetName }),
           onProgress: (pair, targetName, progress) =>
@@ -1099,6 +1126,7 @@ type SelectionRunOptions = Pick<
   | 'passWithNoTests'
   | 'output'
   | 'maxFailures'
+  | 'maxDuration'
   | 'repeatEach'
 >;
 
@@ -1163,6 +1191,7 @@ async function selectionInputs(options: SelectionRunOptions, config: ResolvedCon
  */
 function validateRunOptions(options: SelectionRunOptions): void {
   positiveInt(options.maxFailures, 'maxFailures');
+  positiveInt(options.maxDuration, 'maxDuration', 'milliseconds');
   positiveInt(options.repeatEach, 'repeatEach');
 }
 

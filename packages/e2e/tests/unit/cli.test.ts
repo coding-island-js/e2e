@@ -204,6 +204,20 @@ describe('e2e run argument parsing', () => {
     expect(runMock).not.toHaveBeenCalled();
   });
 
+  it('parses --max-duration as a positive integer of milliseconds', async () => {
+    await invoke('run', '--max-duration', '900000');
+    expect(lastRunOptions().maxDuration).toBe(900_000);
+    runMock.mockClear();
+    for (const value of ['0', '-1', '2.5', '15m']) {
+      stderrSpy.mockClear();
+      process.exitCode = undefined;
+      await invoke('run', '--max-duration', value);
+      expect(process.exitCode, value).toBe(2);
+      expect(written(stderrSpy)).toContain('must be a positive integer');
+    }
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
   it('parses --repeat-each as a positive integer', async () => {
     await invoke('run', '--repeat-each', '3');
     expect(lastRunOptions().repeatEach).toBe(3);
@@ -586,6 +600,7 @@ describe('e2e --version and --help', () => {
       '--workers',
       '--retries',
       '--max-failures',
+      '--max-duration',
       '--repeat-each',
       '--no-cache',
       '--strict-cache',
