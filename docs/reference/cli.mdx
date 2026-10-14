@@ -118,7 +118,17 @@ lockfile, then the invoking package manager, then npm.
 | Argument or flag | Type | Default | Behavior |
 | --- | --- | --- | --- |
 | `[directory]` | path | the working directory | Where to scaffold; created when missing |
-| `-y`, `--yes` | boolean | `false` | Uses the Web engine and Vercel AI Gateway, installs the skill and MCP config in both locations, and skips dependency installation |
+| `-y`, `--yes` | boolean | `false` | Skips the prompts. Each answer not given as a flag takes its default: Web engine, Vercel AI Gateway, the skill and MCP config in both locations, no dependency installation |
+| `--engine <id>` | `web`, `mobile`, `none` | asked | The engine for a new config |
+| `--gateway <id>` | `vercel`, `openrouter`, `openai-compatible`, `chatgpt`, `copilot`, `opencode-console`, `grok`, `none` | asked | The model gateway for agent steps in a new config |
+| `--endpoint <url>` | URL | asked; `http://127.0.0.1:11434/v1` with `--yes` | Base URL for `--gateway openai-compatible`: HTTPS, or HTTP on a loopback host |
+| `--skills <dirs>` | `.agents/skills`, `.claude/skills`, comma-separated or repeated, or `none` | asked | Where to install the agent skill |
+| `--mcp <files>` | `.mcp.json`, `.cursor/mcp.json`, comma-separated or repeated, or `none` | asked | Where to register the MCP server |
+| `--install`, `--no-install` | boolean | asked; `--no-install` with `--yes` | Whether to install dependencies |
+
+A flag answers its question and skips that prompt, with or without `--yes`.
+An unknown value exits 2 before any write and lists the valid ones.
+`--engine`, `--gateway`, and `--endpoint` apply only to a new config.
 
 | Creates | Content |
 | --- | --- |
@@ -132,14 +142,17 @@ lockfile, then the invoking package manager, then npm.
 <CodeGroup>
 ```bash npm
 npx e2e init --yes
+npx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
 ```
 
 ```bash pnpm
 pnpm dlx e2e init --yes
+pnpm dlx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
 ```
 
 ```bash bun
 bunx e2e init --yes
+bunx e2e init --yes --gateway openrouter --skills .agents/skills --mcp .mcp.json --install
 ```
 </CodeGroup>
 
