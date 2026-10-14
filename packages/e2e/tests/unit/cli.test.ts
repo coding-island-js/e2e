@@ -335,6 +335,8 @@ describe('e2e run argument parsing', () => {
       'custom.config.ts',
       '--output',
       'out',
+      '--cache-dir',
+      'shared/cache',
       '--tag-mode',
       'all',
     );
@@ -346,6 +348,7 @@ describe('e2e run argument parsing', () => {
     expect(options.passWithNoTests).toBe(true);
     expect(options.configPath).toBe('custom.config.ts');
     expect(options.output).toBe('out');
+    expect(options.cacheDir).toBe('shared/cache');
   });
 
   it('parses --trace and --video modes, a bare flag as on', async () => {
@@ -593,6 +596,7 @@ describe('e2e --version and --help', () => {
       '-w',
       '--reporter',
       '--output',
+      '--cache-dir',
       '--debug',
       '--ai-trace',
       '--trace',

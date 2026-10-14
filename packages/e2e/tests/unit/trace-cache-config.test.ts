@@ -82,6 +82,30 @@ describe('cache config resolution', () => {
     expect(resolve(APP, { ...BASE_ENV, CI: '1' }, { cache: 'off' }).cache.mode).toBe('off');
   });
 
+  it('takes the directory from --cache-dir, then E2E_CACHE_DIR, then cache.dir, from the project root', () => {
+    const configured = { ...APP, cache: { mode: 'read-only' as const, dir: 'configured' } };
+    const env = { ...BASE_ENV, E2E_CACHE_DIR: '../shared/e2e' };
+    expect(resolve(configured, env, { cacheDir: '/abs/flag' }).cache.dir).toBe(path.resolve('/abs/flag'));
+    expect(resolve(configured, env).cache.dir).toBe(path.resolve(ROOT, '../shared/e2e'));
+    expect(resolve(configured, { ...BASE_ENV, E2E_CACHE_DIR: ' ' }).cache.dir).toBe(path.join(ROOT, 'configured'));
+    expect(resolve(APP, env).cache.dir).toBe(path.resolve(ROOT, '../shared/e2e'));
+  });
+
+  it('leaves the mode to the config and --no-cache when the directory is overridden', () => {
+    const env = { ...BASE_ENV, E2E_CACHE_DIR: '/abs/shared' };
+    expect(resolve({ ...APP, cache: 'read-only' }, env).cache).toMatchObject({ mode: 'read-only', dir: path.resolve('/abs/shared') });
+    expect(resolve(APP, env, { cache: 'off', cacheDir: 'flag' }).cache).toMatchObject({ mode: 'off', dir: path.join(ROOT, 'flag') });
+    expect(resolve(APP, { ...env, CI: '1' }).cache.mode).toBe('read-only');
+  });
+
+  it('rejects a blank --cache-dir, and an output the overridden cache directory overlaps', () => {
+    expect(() => resolve(APP, BASE_ENV, { cacheDir: ' ' })).toThrow('--cache-dir must be a non-empty path');
+    expect(() => resolve(APP, { ...BASE_ENV, E2E_CACHE_DIR: '.e2e' })).toThrow('output ".e2e" (the default) is the cache directory .e2e or inside it');
+    expect(() => resolve(APP, BASE_ENV, { cacheDir: '.e2e/results/cache' })).toThrow(
+      'output ".e2e" (the default) would hold --cache-dir .e2e/results/cache under results/, which the run owns; move --cache-dir or the output',
+    );
+  });
+
   it('demotes only an unset mode in CI; an explicit read-write or off is honored', () => {
     const ci = { ...BASE_ENV, CI: '1' };
     expect(resolve(APP, ci).cache.mode).toBe('read-only');

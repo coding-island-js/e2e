@@ -3,7 +3,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { envFlag } from '../internal/env.ts';
+import { envFlag, envValue } from '../internal/env.ts';
 import { ConfigurationError } from '../internal/errors.ts';
 import { canonicalDigest, sha256Hex } from '../internal/ids.ts';
 import { realpathOfExisting } from '../internal/paths.ts';
@@ -142,6 +142,8 @@ export interface CliOverrides {
   updateSnapshots?: boolean;
   /** `--output <dir>`: the results directory for this run, over the config's `output`. */
   output?: string;
+  /** `--cache-dir <dir>`: the replay cache directory for this run, over `E2E_CACHE_DIR` and `cache.dir`. */
+  cacheDir?: string;
   /** `--trace [mode]`: which attempts record a trace, over the config's and every target's `trace`. */
   trace?: RecordingMode;
   /** `--video [mode]`: which attempts record a video, over the config's and every target's `video`. */
@@ -286,8 +288,9 @@ export function resolveConfig(
   checkEngineSecrets(targets, secrets, credentials);
   const { agents, agentNames, agent } = resolveAgents(raw.agents, cli.agents);
   const limits = runLimits(agents.values());
-  const cache = resolveCacheConfig(raw, ci, options.projectRoot, cli.cache, cli.cacheStrict === true);
-  const output = resolveOutput(raw.output, cli.output, options.projectRoot, cache.dir, tests);
+  const cacheDir = cacheDirOverride(cli, env);
+  const cache = resolveCacheConfig(raw, ci, options.projectRoot, cli.cache, cli.cacheStrict === true, cacheDir?.dir);
+  const output = resolveOutput(raw.output, cli.output, options.projectRoot, cache.dir, cacheDir?.where ?? 'cache.dir', tests);
 
   const resolved: ResolvedConfig = {
     projectId,
@@ -350,6 +353,7 @@ function resolveCacheConfig(
   projectRoot: string,
   cliMode: CacheMode | undefined,
   cliStrict: boolean,
+  overrideDir: string | undefined,
 ): ResolvedCacheConfig {
   const value = raw.cache;
   let mode: CacheMode = 'read-write';
@@ -409,9 +413,23 @@ function resolveCacheConfig(
   return {
     mode,
     store,
-    dir: path.resolve(projectRoot, dir ?? path.join('.e2e', 'cache')),
+    dir: path.resolve(projectRoot, overrideDir ?? dir ?? path.join('.e2e', 'cache')),
     strict: strict || cliStrict ? { config: strict, flag: cliStrict } : false,
   };
+}
+
+/**
+ * The directory that replaces `cache.dir`, and what named it: `--cache-dir`,
+ * else a non-blank `E2E_CACHE_DIR`. It resolves from the project root, as
+ * `cache.dir` and `--output` do, and leaves the cache mode alone.
+ */
+function cacheDirOverride(cli: CliOverrides, env: NodeJS.ProcessEnv): { dir: string; where: string } | undefined {
+  if (cli.cacheDir !== undefined) {
+    if (cli.cacheDir.trim() === '') throw new ConfigurationError('INVALID_CONFIG', '--cache-dir must be a non-empty path');
+    return { dir: cli.cacheDir, where: '--cache-dir' };
+  }
+  const dir = envValue(env, 'E2E_CACHE_DIR');
+  return dir === undefined ? undefined : { dir, where: 'E2E_CACHE_DIR' };
 }
 
 /** The directories under the output a run clears or owns, which nothing else may live in. */
@@ -448,6 +466,7 @@ function resolveOutput(
   flag: string | undefined,
   projectRoot: string,
   cacheDir: string,
+  cacheWhere: string,
   tests: readonly string[],
 ): string {
   const where = flag === undefined ? 'output' : '--output';
@@ -476,7 +495,7 @@ function resolveOutput(
   if (isWithin(real, cache)) refuse(`is the cache directory ${path.relative(root, cache)} or inside it; keep results and the replay cache apart`);
   for (const owned of OUTPUT_OWNED_DIRS) {
     if (isWithin(cache, realpathOfExisting(path.join(output, owned)))) {
-      refuse(`would hold cache.dir ${path.relative(root, cache)} under ${owned}/, which the run owns; move cache.dir or the output`);
+      refuse(`would hold ${cacheWhere} ${path.relative(root, cache)} under ${owned}/, which the run owns; move ${cacheWhere} or the output`);
     }
   }
   for (const pattern of tests) {

@@ -127,6 +127,9 @@ function parseText(limit: number): (value: string) => string {
   };
 }
 
+const CACHE_DIR_DESCRIPTION =
+  'replay cache directory, relative to the project root (default: E2E_CACHE_DIR, else cache.dir in the config, else .e2e/cache)';
+
 const FILES_DESCRIPTION =
   'test files, directories, or globs relative to the project root; a bare file name (signup.e2e.ts, signup) or a trailing part of the path (agent/signup.e2e.ts) also selects the file, and file:line (tests/signup.e2e.ts:12) selects the test declared at that line';
 
@@ -595,6 +598,7 @@ function createProgram(version: string, telemetry: Telemetry): Command {
     .optionsGroup('Output:')
     .option('--reporter <ids>', `comma-separated reporters: ${BUILTIN_REPORTERS.join(', ')}`, parseReporters)
     .option('--output <dir>', 'results directory: report, artifacts, sessions (default: output in the config, else .e2e)')
+    .option('--cache-dir <dir>', CACHE_DIR_DESCRIPTION)
     .addOption(new Option('--artifacts <dir>').hideHelp().argParser(removedArtifactsFlag))
     .option('--debug', 'print phase timings and the agent step table to stderr')
     .option('--ai-trace', 'record every model call to <output>/ai-trace.json (unbox-ai)')
@@ -617,6 +621,7 @@ function createProgram(version: string, telemetry: Telemetry): Command {
           'e2e run --reporter list,junit --workers 4 --retries 2',
           'e2e run --max-failures 3',
           'e2e run --repeat-each 5 --no-cache tests/checkout.e2e.ts',
+          'E2E_CACHE_DIR=~/.cache/my-app/e2e e2e run',
           'CI=1 e2e run --strict-cache',
           'e2e run --update-snapshots tests/home.e2e.ts',
           'e2e run --agent ux tests/onboarding.e2e.ts',
@@ -644,6 +649,7 @@ function createProgram(version: string, telemetry: Telemetry): Command {
           repeatEach?: number;
           reporter?: Reporter[];
           output?: string;
+          cacheDir?: string;
           /** Commander negation: `--no-cache` parses as `cache: false`. */
           cache?: boolean;
           strictCache?: boolean;
@@ -670,6 +676,7 @@ function createProgram(version: string, telemetry: Telemetry): Command {
           repeatEach: options.repeatEach,
           reporters: options.reporter,
           output: options.output,
+          cacheDir: options.cacheDir,
           noCache: options.cache === false,
           strictCache: options.strictCache,
           updateSnapshots: options.updateSnapshots,
@@ -877,7 +884,7 @@ function createProgram(version: string, telemetry: Telemetry): Command {
     .command('cache')
     .summary('inspect, measure, and clear the replay cache')
     .description(
-      'Read the replay cache the runs write under .e2e/cache: what a committed cache holds, how much room it takes, and how to empty it. Reads the same config as e2e run, so cache.dir and --config decide which store is meant.',
+      'Read the replay cache the runs write under .e2e/cache: what a committed cache holds, how much room it takes, and how to empty it. Reads the same config as e2e run, so --cache-dir, E2E_CACHE_DIR, cache.dir, and --config decide which store is meant.',
     )
     .addHelpText(
       'after',
@@ -890,7 +897,8 @@ function createProgram(version: string, telemetry: Telemetry): Command {
       .summary(summary)
       .description(description)
       .option('--config <path>', 'config file (default: the nearest e2e.config.ts)')
-      .action(async (options: { config?: string }) => {
+      .option('--cache-dir <dir>', CACHE_DIR_DESCRIPTION)
+      .action(async (options: { config?: string; cacheDir?: string }) => {
         process.exitCode = await cache(name, options);
       });
   };

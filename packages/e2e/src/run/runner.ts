@@ -125,6 +125,11 @@ export interface RunOptions {
   passWithNoTests?: boolean | undefined;
   /** Runs with the trace cache off (`--no-cache`), overriding the config. */
   noCache?: boolean | undefined;
+  /**
+   * The replay cache directory for this run (`--cache-dir`), relative to the
+   * project root, over `E2E_CACHE_DIR` and the config's `cache.dir`.
+   */
+  cacheDir?: string | undefined;
   /** Turns `cache.strict` on (`--strict-cache`): a recording that no longer replays fails its step. */
   strictCache?: boolean | undefined;
   /** Rewrites the stored screenshots `toHaveScreenshot` finds different (`--update-snapshots`). */
@@ -392,6 +397,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
   if (options.strictCache === true) cli.cacheStrict = true;
   if (options.updateSnapshots === true) cli.updateSnapshots = true;
   if (options.output !== undefined) cli.output = options.output;
+  if (options.cacheDir !== undefined) cli.cacheDir = options.cacheDir;
   if (options.trace !== undefined) cli.trace = options.trace;
   if (options.video !== undefined) cli.video = options.video;
   if (options.agent !== undefined) cli.agents = typeof options.agent === 'string' ? [options.agent] : options.agent;

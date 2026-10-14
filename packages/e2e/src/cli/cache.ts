@@ -25,6 +25,8 @@ export type CacheCommand = 'ls' | 'clear' | 'stats';
 export interface CacheOptions {
   /** Explicit config path; the nearest `e2e.config.ts` when absent. */
   readonly config?: string;
+  /** `--cache-dir`: the store directory, over `E2E_CACHE_DIR` and `cache.dir`. */
+  readonly cacheDir?: string;
   readonly cwd?: string;
 }
 
@@ -88,8 +90,8 @@ export async function cache(command: CacheCommand, options: CacheOptions = {}): 
 }
 
 /**
- * The store directory from the project's resolved config, so `cache.dir` and
- * `--config` mean here what they mean to a run.
+ * The store directory from the project's resolved config, so `--cache-dir`,
+ * `E2E_CACHE_DIR`, `cache.dir`, and `--config` mean here what they mean to a run.
  */
 async function resolveCacheDirectory(options: CacheOptions): Promise<string> {
   const cwd = options.cwd ?? process.cwd();
@@ -100,6 +102,7 @@ async function resolveCacheDirectory(options: CacheOptions): Promise<string> {
     projectRoot: discovered.projectRoot,
     configPath: discovered.configPath,
     env: process.env,
+    cli: options.cacheDir === undefined ? {} : { cacheDir: options.cacheDir },
   });
   if (config.cache.store !== undefined) {
     throw new Error(

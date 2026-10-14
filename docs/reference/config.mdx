@@ -445,8 +445,8 @@ owns part of it, the output directory fails the config load with
 
 - is the project root, or outside it;
 - is a file, or a path under one (a missing directory is created);
-- is `cache.dir` or inside it, or would hold `cache.dir` under `results/`,
-  `sessions/`, or `videos/`;
+- is the cache directory (`cache.dir`, `--cache-dir`, or `E2E_CACHE_DIR`) or
+  inside it, or would hold it under `results/`, `sessions/`, or `videos/`;
 - holds a directory a `tests` glob scans (`output: 'tests'` with the default
   `tests/**/*.e2e.ts`).
 
@@ -943,7 +943,7 @@ export interface CacheConfig {
   mode?: CacheMode;
   /** Custom entry store; omit it to use the file store at `dir`. */
   store?: CacheStore;
-  /** File store directory, resolved against the project root; default `.e2e/cache`, whatever `output` says. */
+  /** File store directory, resolved against the project root; default `.e2e/cache`, whatever `output` says. `--cache-dir` and `E2E_CACHE_DIR` replace it. */
   dir?: string;
   /** Fail a step whose recording no longer replays with `REPLAY_STALE`. Default `false`. */
   strict?: boolean;
