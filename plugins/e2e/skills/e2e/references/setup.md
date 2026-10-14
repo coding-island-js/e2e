@@ -40,10 +40,12 @@ e2e init`; `npx e2e init my-app` scaffolds into a new directory.
 
 The wizard picks an engine and a model provider (None for tests without AI)
 and offers to install this skill, register the MCP server for your coding
-agent, and install dependencies. `--yes` picks Playwright and Vercel AI
+agent, and install dependencies. `--yes` picks the web engine (Playwright) and Vercel AI
 Gateway, installs the skill in `.agents/skills/` (`.claude/skills/e2e`
 symlinks to it), registers MCP in `.mcp.json` and `.cursor/mcp.json`, skips
-installing dependencies.
+installing dependencies. A flag per question overrides one default:
+`--engine`, `--gateway`, `--endpoint`, `--skills`, `--mcp` (comma-separated
+locations, or `none`), `--install`; `npx e2e init --help` lists the values.
 
 The wizard needs a terminal: without one, `init` exits with code 2. From an
 agent's shell, run `npx e2e init --yes` when its defaults fit and install the

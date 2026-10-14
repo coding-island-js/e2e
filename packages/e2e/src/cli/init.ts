@@ -20,7 +20,7 @@ import {
   type SkillInstall,
 } from './init/agent-skill.ts';
 import { getEnginePresets, DEFAULT_ENGINE_ID, type EngineId } from './init/engines.ts';
-import { GATEWAYS, getGatewayPreset, validateEndpoint, type GatewayId } from './init/gateways.ts';
+import { DEFAULT_ENDPOINT, GATEWAYS, getGatewayPreset, validateEndpoint, type GatewayId } from './init/gateways.ts';
 import { findRegisteredMcpFiles, MCP_LOCATIONS, planMcpRegistration } from './init/mcp-config.ts';
 import { addDependencies, addScripts, describeManifestError, readPackage, serializePackage } from './init/package.ts';
 import { createScaffold, type ScaffoldModel } from './init/scaffold.ts';
@@ -41,7 +41,7 @@ export interface InitOptions {
    * a prompt nobody can answer would otherwise wait forever.
    */
   interactive?: boolean;
-  /** The answers given as flags; each one skips its prompt, and an omitted one keeps the `--yes` default or asks. */
+  /** The answers given as flags; each one skips its prompt, and an omitted one takes the `--yes` default or asks. */
   engine?: EngineId;
   gateway?: GatewayChoice;
   /** The base URL for the `openai-compatible` gateway. */
@@ -74,12 +74,16 @@ const DEFAULT_GATEWAY: GatewayId = 'vercel';
 
 export type GatewayChoice = GatewayId | 'none';
 
+/** The wizard's answers, each from a flag, an earlier run, or `--yes`; a missing one is asked. */
+type Answers = Pick<InitOptions, 'engine' | 'gateway' | 'endpoint' | 'skills' | 'mcp' | 'install'>;
+
 /**
  * Runs `e2e init`. Every prompt happens before the first write, existing
  * config and test files are never touched, and dependencies install only when
- * the user asks. The agent skill is offered once; later runs refresh the
- * copies that exist and add a location only when `--skills` names it, and
- * never write through a symlink.
+ * the user asks. The agent skill and MCP registration are offered once; later
+ * runs refresh the locations that exist, and `--skills` or `--mcp` replaces
+ * that set with exactly the ones it names. Nothing is written through a
+ * symlink.
  */
 export async function init(cwd: string, options: InitOptions = {}): Promise<InitOutcome & { readonly exitCode: number }> {
   // The wordmark drops in above the wizard, at rest when --yes asked for no questions; a terminal is the one place it shows.
@@ -138,6 +142,28 @@ export async function init(cwd: string, options: InitOptions = {}): Promise<Init
   const ignoreLines = existingIgnore.split(/\r?\n/);
   const missingIgnore = GITIGNORE_ENTRIES.filter((entry) => !ignoreLines.includes(entry));
 
+  // A flag answers its question, an earlier run's locations stand when no flag names others, and --yes answers the rest.
+  const defaults: Answers = options.yes
+    ? {
+        engine: DEFAULT_ENGINE_ID,
+        gateway: DEFAULT_GATEWAY,
+        endpoint: DEFAULT_ENDPOINT,
+        skills: SKILL_LOCATIONS.map(({ dir }) => dir),
+        mcp: MCP_LOCATIONS.map(({ file }) => file),
+        install: false,
+      }
+    : {};
+  const foundSkillDirs = findInstalledSkillDirs(cwd);
+  const foundMcpFiles = findRegisteredMcpFiles(cwd);
+  const given = {
+    engine: options.engine ?? defaults.engine,
+    gateway: options.gateway ?? defaults.gateway,
+    endpoint: options.endpoint ?? defaults.endpoint,
+    skills: options.skills ?? (foundSkillDirs.length > 0 ? foundSkillDirs : defaults.skills),
+    mcp: options.mcp ?? (foundMcpFiles.length > 0 ? foundMcpFiles : defaults.mcp),
+    install: options.install ?? defaults.install,
+  };
+
   // Engine and model gateway are choices for a new config only; an existing config keeps its own dependencies.
   let engine: EngineId = 'none';
   let model: ScaffoldModel | undefined;
@@ -146,34 +172,33 @@ export async function init(cwd: string, options: InitOptions = {}): Promise<Init
     clack.log.warn(`Ignoring ${configFlags.join(', ')}: ${existingConfig} exists, and these apply to a new config only`);
   }
   if (existingConfig === undefined) {
-    const selectedEngine = options.engine ?? (options.yes ? DEFAULT_ENGINE_ID : await clack.select<EngineId>({
+    const selectedEngine = given.engine ?? await clack.select<EngineId>({
       message: 'Which engine?',
       initialValue: DEFAULT_ENGINE_ID,
       options: getEnginePresets().map(({ id, label, hint }) => ({ value: id, label, hint })),
-    }));
+    });
     if (isCancelled(selectedEngine)) return cancel();
     engine = selectedEngine;
 
     // The gateway is a visible choice, not a runner default: the config imports
     // its provider package and constructs the model.
-    const gateway = options.gateway ?? (options.yes ? DEFAULT_GATEWAY : await clack.select<GatewayChoice>({
+    const gateway = given.gateway ?? await clack.select<GatewayChoice>({
       message: 'Which model gateway for agent steps? Adds AI SDK v7.',
       initialValue: DEFAULT_GATEWAY,
       options: [
         ...GATEWAYS.map(({ id, label, hint }) => ({ value: id, label, hint })),
         { value: 'none', label: 'None', hint: 'deterministic tests only; add a gateway later' },
       ],
-    }));
+    });
     if (isCancelled(gateway)) return cancel();
     if (gateway === 'openai-compatible') {
-      // Under --yes without --endpoint, the scaffold writes the local placeholder.
-      const endpoint = options.endpoint ?? (options.yes ? undefined : await clack.text({
+      const endpoint = given.endpoint ?? await clack.text({
         message: 'Base URL of the OpenAI-compatible API',
-        placeholder: 'http://127.0.0.1:11434/v1',
+        placeholder: DEFAULT_ENDPOINT,
         validate: validateEndpoint,
-      }));
+      });
       if (isCancelled(endpoint)) return cancel();
-      model = endpoint === undefined ? { gateway } : { gateway, endpoint: endpoint.trim() };
+      model = { gateway, endpoint: endpoint.trim() };
     } else if (gateway !== 'none') {
       model = { gateway };
     }
@@ -181,12 +206,9 @@ export async function init(cwd: string, options: InitOptions = {}): Promise<Init
     facts.gateway = model?.gateway ?? 'none';
   }
 
-  const skillDirs = await chooseLocations(
-    findInstalledSkillDirs(cwd),
+  const skillDirs = given.skills ?? await askLocations(
     SKILL_LOCATIONS.map(({ dir, hint }) => ({ value: dir, hint })),
     'Install the e2e skill for coding agents?',
-    options.skills,
-    options.yes,
   );
   if (isCancelled(skillDirs)) return cancel();
   facts.skill = skillDirs.length > 0;
@@ -206,12 +228,9 @@ export async function init(cwd: string, options: InitOptions = {}): Promise<Init
     if (proceed) skillInstalls.push(planned);
   }
 
-  const mcpFiles = await chooseLocations(
-    findRegisteredMcpFiles(cwd),
+  const mcpFiles = given.mcp ?? await askLocations(
     MCP_LOCATIONS.map(({ file, hint }) => ({ value: file, hint })),
     'Register the e2e MCP server for coding agents?',
-    options.mcp,
-    options.yes,
   );
   if (isCancelled(mcpFiles)) return cancel();
   facts.mcp = mcpFiles.length > 0;
@@ -266,7 +285,7 @@ export async function init(cwd: string, options: InitOptions = {}): Promise<Init
   }
 
   const manager = detectPackageManager(cwd, manifest.packageManager);
-  const install = options.install ?? (options.yes ? false : await clack.confirm({ message: `Install dependencies with ${manager}?`, initialValue: true }));
+  const install = given.install ?? await clack.confirm({ message: `Install dependencies with ${manager}?`, initialValue: true });
   if (isCancelled(install)) return cancel();
   facts.install = install;
 
@@ -379,22 +398,11 @@ function linkReplaces(install: SkillInstall, verb: 'replacing' | 'replaced'): st
   return what === undefined ? '' : ` (${verb} ${what})`;
 }
 
-/**
- * Where an agent-facing artifact (the skill, the MCP registration) goes: the
- * locations given as a flag; else the ones an earlier run chose, refreshed
- * and never extended; for a project without one, every known location under
- * `--yes`, else the user's pick.
- */
-async function chooseLocations(
-  found: readonly string[],
+/** Asks where an agent-facing artifact (the skill, the MCP registration) goes, every location preselected. */
+async function askLocations(
   locations: readonly { readonly value: string; readonly hint: string }[],
   message: string,
-  chosen: readonly string[] | undefined,
-  yes: boolean | undefined,
 ): Promise<readonly string[] | symbol> {
-  if (chosen !== undefined) return chosen;
-  if (found.length > 0) return found;
-  if (yes) return locations.map((location) => location.value);
   return clack.multiselect<string>({
     message,
     options: locations.map(({ value, hint }) => ({ value, label: value, hint })),

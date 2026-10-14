@@ -7,6 +7,9 @@
 
 import { isLoopbackHost } from '../../internal/urls.ts';
 
+/** The local server an OpenAI-compatible gateway points at unless an endpoint is given. */
+export const DEFAULT_ENDPOINT = 'http://127.0.0.1:11434/v1';
+
 export type GatewayId = 'vercel' | 'openrouter' | 'openai-compatible' | 'chatgpt' | 'copilot' | 'opencode-console' | 'grok';
 
 export interface GatewayPreset {
@@ -53,7 +56,7 @@ export const GATEWAYS: readonly GatewayPreset[] = [
     model: (endpoint) =>
       `createOpenAICompatible({
         name: 'openai-compatible',
-        baseURL: ${quote(endpoint ?? 'http://127.0.0.1:11434/v1')},
+        baseURL: ${quote(endpoint ?? DEFAULT_ENDPOINT)},
         // apiKey: process.env.LLM_API_KEY,
       }).chatModel('gpt-6-luna')`,
   },
@@ -111,7 +114,7 @@ export function getGatewayPreset(id: GatewayId): GatewayPreset {
  */
 export function validateEndpoint(value: string | undefined): string | undefined {
   const trimmed = value?.trim() ?? '';
-  if (trimmed === '') return 'Enter the base URL, e.g. http://127.0.0.1:11434/v1';
+  if (trimmed === '') return `Enter the base URL, e.g. ${DEFAULT_ENDPOINT}`;
   let parsed: URL;
   try {
     parsed = new URL(trimmed);

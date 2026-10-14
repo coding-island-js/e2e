@@ -24,12 +24,10 @@ import { cache, type CacheCommand } from './cache.ts';
 import { DOCS_URL } from './docs-url.ts';
 import { feedback, FEEDBACK_LIMITS, FEEDBACK_TYPES, type FeedbackReport } from './feedback.ts';
 import { guide } from './guide.ts';
-import { init, type InitOptions } from './init.ts';
-import { SKILL_LOCATIONS } from './init/agent-skill.ts';
-import { getEnginePresets } from './init/engines.ts';
-import { GATEWAYS, validateEndpoint } from './init/gateways.ts';
-import { MCP_LOCATIONS } from './init/mcp-config.ts';
+import { init } from './init.ts';
+import { addInitOptions, checkInitFlags, type InitFlagValues } from './init/flags.ts';
 import { mcp } from './mcp.ts';
+import { parseList, parseNames } from './parse-names.ts';
 import { SESSION_BOUNDS } from '../mcp/session.ts';
 import { PROVIDER_IDS } from '../oauth/providers.ts';
 import { runLogin, runLogout, runModels, type LoginFlags } from '../oauth/cli.ts';
@@ -60,26 +58,6 @@ function parseNonNegativeInt(value: string): number {
     throw new InvalidArgumentError('must be a nonnegative integer');
   }
   return parsed;
-}
-
-function parseList(value: string): string[] {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item !== '');
-}
-
-/**
- * Names, comma-separated or repeated, each once. An empty value is a usage
- * error rather than an empty list: `--tag "$TAGS"` with the variable unset
- * must not select every test, and `--target ''` must not select every target.
- */
-function parseNames(noun: string): (value: string, previous?: string[]) => string[] {
-  return (value, previous = []) => {
-    const names = parseList(value);
-    if (names.length === 0) throw new InvalidArgumentError(`must name at least one ${noun}`);
-    return [...new Set([...previous, ...names])];
-  };
 }
 
 /**
@@ -129,34 +107,6 @@ function parseText(limit: number): (value: string) => string {
     if (length > limit) throw new InvalidArgumentError(`must be at most ${limit} characters, got ${length}`);
     return text;
   };
-}
-
-/**
- * Known init locations for `--skills` and `--mcp`, comma-separated or
- * repeated, each once; `none` alone is the empty choice. A trailing slash is
- * dropped, so `.agents/skills/` is `.agents/skills`.
- */
-function parseLocations(noun: string, known: readonly string[]): (value: string, previous?: string[]) => string[] {
-  return (value, previous) => {
-    const expected = `expected ${[...known, 'none'].join(', ')}`;
-    const names = parseList(value).map((name) => name.replace(/\/+$/u, ''));
-    if (names.length === 0) throw new InvalidArgumentError(`must name at least one ${noun} or none; ${expected}`);
-    // A `none` already parsed leaves an empty list behind.
-    if (names.includes('none') || previous?.length === 0) {
-      if (names.length > 1 || previous !== undefined) throw new InvalidArgumentError('none cannot be combined with other values');
-      return [];
-    }
-    const unknown = names.find((name) => !known.includes(name));
-    if (unknown !== undefined) throw new InvalidArgumentError(`unknown ${noun} "${unknown}"; ${expected}`);
-    return [...new Set([...(previous ?? []), ...names])];
-  };
-}
-
-/** The `--endpoint` URL, trimmed, by the rule config resolution applies. */
-function parseEndpoint(value: string): string {
-  const problem = validateEndpoint(value);
-  if (problem !== undefined) throw new InvalidArgumentError(problem);
-  return value.trim();
 }
 
 const FILES_DESCRIPTION =
@@ -500,32 +450,15 @@ function createProgram(version: string, telemetry: Telemetry): Command {
     telemetry.session(command, usedFlags(actionCommand));
   });
 
-  program
+  const initCommand = program
     .command('init')
     .summary('scaffold an ESM package, e2e.config.ts, an example test, .gitignore entries, and the agent skill')
     .description(
       'Scaffold a project without touching existing files: an ESM package.json, e2e.config.ts, tests/example.e2e.ts, .gitignore entries, and the e2e skill for coding agents. Prompts for the engine, for AI support, and for the skill directories, then offers to install the dependencies; --yes takes the defaults, with the skill in .agents/skills and .claude/skills linked to it.',
     )
     .argument('[directory]', 'project directory, created when missing (default: the current directory)')
-    .option('-y, --yes', 'skip the prompts; each answer not given as a flag takes its default: web, vercel, every skill and MCP location, no installation')
-    .addOption(new Option('--engine <id>', 'engine for a new config').choices(getEnginePresets().map((preset) => preset.id)))
-    .addOption(
-      new Option('--gateway <id>', 'model gateway for agent steps in a new config; none for deterministic tests only').choices([
-        ...GATEWAYS.map((gateway) => gateway.id),
-        'none',
-      ]),
-    )
-    .addOption(new Option('--endpoint <url>', 'base URL of the API for --gateway openai-compatible').argParser(parseEndpoint))
-    .addOption(
-      new Option('--skills <dirs>', `where to install the agent skill, comma-separated: ${SKILL_LOCATIONS.map((location) => location.dir).join(', ')}, or none`)
-        .argParser(parseLocations('skill directory', SKILL_LOCATIONS.map((location) => location.dir))),
-    )
-    .addOption(
-      new Option('--mcp <files>', `where to register the MCP server, comma-separated: ${MCP_LOCATIONS.map((location) => location.file).join(', ')}, or none`)
-        .argParser(parseLocations('MCP config file', MCP_LOCATIONS.map((location) => location.file))),
-    )
-    .option('--install', 'install dependencies after scaffolding')
-    .option('--no-install', 'do not install dependencies')
+    .option('-y, --yes', 'skip the prompts; each answer not given as a flag takes its default: web, vercel, every skill and MCP location, no installation');
+  addInitOptions(initCommand)
     .addHelpText(
       'after',
       [
@@ -535,12 +468,9 @@ function createProgram(version: string, telemetry: Telemetry): Command {
         docsLine('/reference/cli'),
       ].join('\n'),
     )
-    .action(async (directory: string | undefined, options: Omit<InitOptions, 'directory' | 'interactive'>, command: Command) => {
-      if (options.endpoint !== undefined && options.gateway !== 'openai-compatible') {
-        command.error('error: --endpoint is the base URL for --gateway openai-compatible; pass that gateway with it', { exitCode: 2 });
-      }
+    .action(async (directory: string | undefined, options: InitFlagValues, command: Command) => {
       const { exitCode, ...outcome } = await init(resolvePath(process.cwd(), directory ?? '.'), {
-        ...options,
+        ...checkInitFlags(options, command),
         ...(directory === undefined ? {} : { directory }),
         // Prompts need a terminal on both ends; a pipe or a CI log has neither.
         interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
