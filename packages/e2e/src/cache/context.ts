@@ -313,6 +313,8 @@ function staleAdvice(cache: ResolvedCacheConfig, source: CacheStrictSource, proj
   const run = `re-record it with a read-write run ${off}`;
   if (cache.store !== undefined) return `${run}; the run writes the new entry to the configured cache.store`;
   const relative = path.relative(projectRoot, cache.dir);
-  const where = relative === '' || relative.startsWith('..') || path.isAbsolute(relative) ? cache.dir : relative;
-  return `${run} and commit the changed entry under ${where.split(path.sep).join('/')}`;
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return `${run}; the run writes the new entry under ${cache.dir.split(path.sep).join('/')}`;
+  }
+  return `${run} and commit the changed entry under ${relative.split(path.sep).join('/')}`;
 }

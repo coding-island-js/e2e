@@ -100,6 +100,10 @@ describe('cache config resolution', () => {
 
   it('rejects a blank --cache-dir, and an output the overridden cache directory overlaps', () => {
     expect(() => resolve(APP, BASE_ENV, { cacheDir: ' ' })).toThrow('--cache-dir must be a non-empty path');
+    expect(() => resolve({ cache: { store: memoryStore() } }, BASE_ENV, { cacheDir: 'shared' })).toThrow(
+      '--cache-dir names a file store directory, but cache.store replaces the file store; drop one',
+    );
+    expect(resolve({ cache: { store: memoryStore() } }, { ...BASE_ENV, E2E_CACHE_DIR: 'shared' }).cache.store).toBeDefined();
     expect(() => resolve(APP, { ...BASE_ENV, E2E_CACHE_DIR: '.e2e' })).toThrow('output ".e2e" (the default) is the cache directory .e2e or inside it');
     expect(() => resolve(APP, BASE_ENV, { cacheDir: '.e2e/results/cache' })).toThrow(
       'output ".e2e" (the default) would hold --cache-dir .e2e/results/cache under results/, which the run owns; move --cache-dir or the output',
@@ -170,6 +174,12 @@ describe('REPLAY_STALE advice', () => {
       're-record it with a read-write run with cache.strict set to false and commit the changed entry under recordings/replays',
     );
     expect(adviceFor({ cache: { strict: true } }, { cacheStrict: true })).toContain('without --strict-cache and with cache.strict set to false');
+  });
+
+  it('names a cache directory outside the project without asking for a commit', () => {
+    expect(adviceFor({}, { cacheStrict: true, cacheDir: '/shared/e2e' })).toBe(
+      `re-record it with a read-write run without --strict-cache; the run writes the new entry under ${path.resolve('/shared/e2e').split(path.sep).join('/')}`,
+    );
   });
 
   it('points at the configured store rather than a directory when a custom store holds the entries', () => {

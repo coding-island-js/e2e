@@ -271,7 +271,10 @@ file store and doesn't default to `read-only` in CI. `e2e explore` and
 Point every checkout of a project at one directory with `E2E_CACHE_DIR`, or
 `--cache-dir` for one run. Either replaces `cache.dir`, resolves from the
 project root, and leaves the mode alone. Parallel runs can share the
-directory: each write replaces its file atomically.
+directory: each write replaces its file atomically. Entries are keyed by
+project, so give every checkout the same `projectId` (or `package.json`
+`name`); without either, each checkout's path becomes its identity and
+nothing replays across them.
 
 ```bash
 E2E_CACHE_DIR=~/.cache/my-app/e2e npx e2e run

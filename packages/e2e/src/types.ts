@@ -1194,7 +1194,7 @@ export interface CacheConfig {
   mode?: CacheMode;
   /** Custom entry store; omit it to use the file store at `dir`. */
   store?: CacheStore;
-  /** File store directory, resolved against the project root. */
+  /** File store directory, resolved against the project root. `--cache-dir` and `E2E_CACHE_DIR` replace it. */
   dir?: string;
   /**
    * Fails a step whose recording exists but no longer replays (a control

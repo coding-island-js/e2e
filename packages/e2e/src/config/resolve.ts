@@ -289,7 +289,7 @@ export function resolveConfig(
   const { agents, agentNames, agent } = resolveAgents(raw.agents, cli.agents);
   const limits = runLimits(agents.values());
   const cacheDir = cacheDirOverride(cli, env);
-  const cache = resolveCacheConfig(raw, ci, options.projectRoot, cli.cache, cli.cacheStrict === true, cacheDir?.dir);
+  const cache = resolveCacheConfig(raw, ci, options.projectRoot, cli.cache, cli.cacheStrict === true, cacheDir);
   const output = resolveOutput(raw.output, cli.output, options.projectRoot, cache.dir, cacheDir?.where ?? 'cache.dir', tests);
 
   const resolved: ResolvedConfig = {
@@ -345,7 +345,8 @@ export function assignPorts(config: ResolvedConfig, ports: PortAssignments): Res
  * learned unless the project says so. An explicit
  * `read-write` in the config is that statement of trust and is honored as
  * written, as is a host-supplied `cache.store`, which states its own trust
- * through the store's `writable` flag.
+ * through the store's `writable` flag. An override replaces `dir` alone;
+ * `--cache-dir` beside a `cache.store` is refused, since it would name nothing.
  */
 function resolveCacheConfig(
   raw: E2EConfig,
@@ -353,7 +354,7 @@ function resolveCacheConfig(
   projectRoot: string,
   cliMode: CacheMode | undefined,
   cliStrict: boolean,
-  overrideDir: string | undefined,
+  override: CacheDirOverride | undefined,
 ): ResolvedCacheConfig {
   const value = raw.cache;
   let mode: CacheMode = 'read-write';
@@ -389,6 +390,9 @@ function resolveCacheConfig(
         'cache.store must implement CacheStore: { writable, read(keyHash), write(keyHash, payload) }',
       );
     }
+    if (store !== undefined && override?.where === '--cache-dir') {
+      throw new ConfigurationError('INVALID_CONFIG', '--cache-dir names a file store directory, but cache.store replaces the file store; drop one');
+    }
     if (value.dir !== undefined) {
       if (typeof value.dir !== 'string' || value.dir.trim() === '') {
         throw new ConfigurationError('INVALID_CONFIG', 'cache.dir must be a non-empty path');
@@ -413,9 +417,15 @@ function resolveCacheConfig(
   return {
     mode,
     store,
-    dir: path.resolve(projectRoot, overrideDir ?? dir ?? path.join('.e2e', 'cache')),
+    dir: path.resolve(projectRoot, override?.dir ?? dir ?? path.join('.e2e', 'cache')),
     strict: strict || cliStrict ? { config: strict, flag: cliStrict } : false,
   };
+}
+
+/** A directory that replaces `cache.dir`, and the flag or variable that named it. */
+interface CacheDirOverride {
+  readonly dir: string;
+  readonly where: '--cache-dir' | 'E2E_CACHE_DIR';
 }
 
 /**
@@ -423,7 +433,7 @@ function resolveCacheConfig(
  * else a non-blank `E2E_CACHE_DIR`. It resolves from the project root, as
  * `cache.dir` and `--output` do, and leaves the cache mode alone.
  */
-function cacheDirOverride(cli: CliOverrides, env: NodeJS.ProcessEnv): { dir: string; where: string } | undefined {
+function cacheDirOverride(cli: CliOverrides, env: NodeJS.ProcessEnv): CacheDirOverride | undefined {
   if (cli.cacheDir !== undefined) {
     if (cli.cacheDir.trim() === '') throw new ConfigurationError('INVALID_CONFIG', '--cache-dir must be a non-empty path');
     return { dir: cli.cacheDir, where: '--cache-dir' };
