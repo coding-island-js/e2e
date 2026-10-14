@@ -12,9 +12,8 @@ import type { SkipInfo, TestTargetPair } from '../collect/select.ts';
 import type { ResolvedTarget } from '../config/resolve.ts';
 import type { AiTraceSnapshot } from '../internal/ai-trace.ts';
 import type { DebugSnapshot } from '../internal/debug.ts';
-import { InfrastructureError, type SerializedError, TestTimeoutError, serializeError } from '../internal/errors.ts';
+import { InfrastructureError, type SerializedError, TestError, TestTimeoutError, serializeError } from '../internal/errors.ts';
 import { timestamp, uuidv7 } from '../internal/ids.ts';
-import { MAX_TIMER_MS } from '../internal/time.ts';
 import type { AttemptRecord, ResultRecord, RunError, SerialGroupRecord } from './records.ts';
 import { retryVerdict } from './retry.ts';
 import { SerialGroupProgress, serialGroupId } from './serial.ts';
@@ -30,6 +29,7 @@ import {
   timeLimitSkip,
   unstartedResult,
   type TargetWorkPlan,
+  type TimeLimit,
   type WorkUnit,
   pairKey,
 } from './units.ts';
@@ -57,9 +57,10 @@ export interface SchedulerEvents {
   onFailureLimit?(failures: number, limit: number): void;
   /**
    * The time limit was reached: the queues were skipped with cause
-   * `time-limit` and every worker is being interrupted.
+   * `time-limit`, the `RUN_TIMEOUT` run error was reported, and every
+   * worker is being interrupted.
    */
-  onTimeLimit?(maxDuration: number): void;
+  onTimeLimit?(): void;
   /** A worker began executing one test-target pair. */
   onTestStart?(start: PairStart, targetName: string): void;
   /** Live step progress of one running pair, identified by test id, agent, and repeat. */
@@ -81,8 +82,8 @@ export interface RunUnitsOptions {
   readonly workers: number;
   /** Failures (failed or timed out results) after which the run stops dispatching and interrupts its workers. */
   readonly maxFailures?: number;
-  /** Milliseconds after which the run stops dispatching and interrupts its workers, counted from the scheduler's start. */
-  readonly maxDuration?: number;
+  /** Time after which the run stops dispatching and interrupts its workers, counted from the scheduler's start. */
+  readonly timeLimit?: TimeLimit;
   /** Budget for a worker to finish an in-flight unit after an interrupt. */
   readonly interruptGraceMs: number;
   readonly interruptSignal: AbortSignal;
@@ -379,28 +380,30 @@ class Scheduler {
     if (limit === undefined || this.stopSkip !== undefined || this.failures < limit) return;
     this.stopEarly(failureLimitSkip(this.failures, limit));
     this.options.events.onFailureLimit?.(this.failures, limit);
-    this.wakeUp();
   }
 
   /**
-   * Stops the run at its time limit, unless an interrupt or the failure
-   * limit already ended dispatch.
+   * Stops the run at its time limit with a `RUN_TIMEOUT` run error, unless
+   * an interrupt or the failure limit already ended dispatch.
    */
-  private timeUp(maxDuration: number): void {
+  private timeUp(limit: TimeLimit): void {
     if (this.interrupting) return;
-    this.stopEarly(timeLimitSkip(maxDuration));
-    this.options.events.onTimeLimit?.(maxDuration);
-    this.wakeUp();
+    const skip = timeLimitSkip(limit);
+    this.stopEarly(skip);
+    const error = new TestError('RUN_TIMEOUT', `${skip.reason}: the running tests end as interrupted, the rest are skipped`);
+    this.options.events.onRunError({ error: serializeError(error) });
+    this.options.events.onTimeLimit?.();
   }
 
   /**
    * Stops the run at a limit: every queued pair is skipped with `skip`, and
-   * once the caller told the runner and woke the loop, the workers are
-   * interrupted the way the interrupt signal would.
+   * the loop wakes to interrupt the workers the way the interrupt signal
+   * would.
    */
   private stopEarly(skip: SkipInfo): void {
     this.stopSkip = skip;
     for (const state of this.targets.values()) this.skipQueues(state, skip);
+    this.wakeUp();
   }
 
   /** The failure limit a unit dispatched now carries, when the run has one. */
@@ -439,10 +442,8 @@ class Scheduler {
     const onInterrupt = (): void => this.wakeUp();
     this.options.interruptSignal.addEventListener('abort', onInterrupt, { once: true });
     this.options.forceSignal.addEventListener('abort', onInterrupt, { once: true });
-    const maxDuration = this.options.maxDuration;
-    // A limit past the longest timer outlasts any run, so it needs no timer.
-    const timeLimit =
-      maxDuration === undefined || maxDuration > MAX_TIMER_MS ? undefined : setTimeout(() => this.timeUp(maxDuration), maxDuration);
+    const limit = this.options.timeLimit;
+    const timeLimit = limit === undefined ? undefined : setTimeout(() => this.timeUp(limit), limit.ms);
     try {
       for (;;) {
         this.broadcastInterrupt();

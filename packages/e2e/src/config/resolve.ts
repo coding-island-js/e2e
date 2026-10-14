@@ -13,7 +13,7 @@ import { BUILTIN_REPORTER_LIST, BUILTIN_REPORTERS, isBuiltinReporter } from '../
 import { isStepExecutor } from '../agent/executor.ts';
 import { compileGlob, compileGlobList, literalPrefix } from '../internal/globs.ts';
 import { isRecord } from './command.ts';
-import { boundedInt, describeValue, positiveInt } from './validate.ts';
+import { boundedInt, describeValue, positiveInt, timerMs } from './validate.ts';
 import type {
   ArtifactStore,
   ArtifactsConfig,
@@ -264,7 +264,7 @@ export function resolveConfig(
   const actionTimeout = positiveInt(raw.actionTimeout, 'actionTimeout', 'milliseconds') ?? 30_000;
   const assertionTimeout = positiveInt(raw.assertionTimeout, 'assertionTimeout', 'milliseconds') ?? 5_000;
   const cleanupTimeout = positiveInt(raw.cleanupTimeout, 'cleanupTimeout', 'milliseconds') ?? 30_000;
-  const maxDuration = positiveInt(raw.maxDuration, 'maxDuration', 'milliseconds');
+  const maxDuration = timerMs(raw.maxDuration, 'maxDuration');
 
   // CLI overrides obey the same bounds as the config keys they replace: a
   // `--workers 0` would otherwise plan work no worker can ever take.

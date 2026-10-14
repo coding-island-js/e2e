@@ -219,7 +219,7 @@ it [fails the attempt](/reference/test#members).
 
 ## maxDuration
 
-Set `maxDuration` to stop a run that takes too long, in milliseconds:
+Set `maxDuration` to stop a run that takes too long, in milliseconds, at most 2147483647 (about 24 days):
 
 ```ts
 export default { targets, maxDuration: 900_000 } satisfies E2EConfig;

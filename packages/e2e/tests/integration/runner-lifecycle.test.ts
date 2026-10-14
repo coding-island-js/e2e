@@ -804,7 +804,7 @@ test('never started either', async () => {});
       expect(stopped.report.run.summary).toMatchObject({ selected: 3, passed: 0, failed: 0, interrupted: 1, skipped: 2 });
       expect(resultByTitle(stopped, 'sleeps past the limit').status).toBe('interrupted');
       for (const title of ['never started', 'never started either']) {
-        expect(resultByTitle(stopped, title).skip).toEqual({ cause: 'time-limit', reason: 'run stopped at its time limit of 2000 ms (maxDuration)' });
+        expect(resultByTitle(stopped, title).skip).toEqual({ cause: 'time-limit', reason: 'run stopped at its time limit of 2000 ms (--max-duration)' });
       }
       expect(stopped.report.run.errors.map((error) => [error.code, error.category])).toEqual([['RUN_TIMEOUT', 'test']]);
       assertValidReport(stopped.report);
@@ -835,6 +835,11 @@ test('never started either', async () => {});
       expect(invalid.exitCode).toBe(2);
       expect(invalid.report.run.errors.map((error) => [error.code, error.message])).toEqual([
         ['INVALID_CONFIG', 'maxDuration must be a positive safe integer of milliseconds, got 0'],
+      ]);
+      const tooLong = await runExistingWithConfigFile(project, { runOptions: { maxDuration: 2 ** 31 } });
+      expect(tooLong.exitCode).toBe(2);
+      expect(tooLong.report.run.errors.map((error) => [error.code, error.message])).toEqual([
+        ['INVALID_CONFIG', 'maxDuration must be at most 2147483647 milliseconds, got 2147483648'],
       ]);
       project.cleanup();
     },
