@@ -821,6 +821,7 @@ export async function run(options: RunOptions = {}): Promise<RunOutcome> {
     // as a run notice.
     const processHooks = () => ({
       ci: isCiMode(env),
+      env,
       notice: (message: string) => emit({ type: 'notice', target: 'app', message }),
       starting: (label: string) => emit({ type: 'setup', step: { kind: 'app', label }, state: 'started' }),
       ready: (label: string, durationMs: number, reused: boolean) =>

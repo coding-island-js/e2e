@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
-import type { Readiness } from '../config/command.ts';
+import { inheritedEnv, type Readiness } from '../config/command.ts';
 import { InfrastructureError } from '../internal/errors.ts';
 import { createRedactor } from '../internal/redact.ts';
 import { sleep } from '../internal/time.ts';
@@ -95,12 +95,14 @@ async function answers(url: string, timeoutMs: number, signal?: AbortSignal): Pr
 
 /**
  * What the runner tells a managed process about the run: whether CI mode is
- * active (where `reuseExisting` is ignored), where to narrate run-level
- * progress such as a reused app, and where to report the process starting
- * and becoming ready.
+ * active (where `reuseExisting` is ignored), the environment the run resolves
+ * against (what `inheritEnv` copies from; default `process.env`), where to
+ * narrate run-level progress such as a reused app, and where to report the
+ * process starting and becoming ready.
  */
 export interface ManagedProcessHooks {
   readonly ci?: boolean;
+  readonly env?: NodeJS.ProcessEnv;
   readonly notice?: (message: string) => void;
   readonly starting?: (label: string) => void;
   /** `reused` when the process attached to one already serving the URL instead of spawning. */
@@ -116,6 +118,8 @@ export class ManagedProcess {
   private child: ChildProcess | null = null;
   private reusedExisting = false;
   private spawnedProcess = false;
+  /** What `inheritEnv` copied at spawn, redacted beside `command.env` from a quoted startup failure. */
+  private inherited: Readonly<Record<string, string>> = {};
 
   constructor(
     private readonly label: string,
@@ -193,7 +197,8 @@ export class ManagedProcess {
       const value = process.env[key];
       if (value !== undefined) env[key] = value;
     }
-    Object.assign(env, this.command.env ?? {});
+    this.inherited = inheritedEnv(this.command.inheritEnv ?? [], this.hooks.env ?? process.env);
+    Object.assign(env, this.inherited, this.command.env ?? {});
 
     const logFd = this.openLog();
     // The log appends across commands and runs; a failure quotes what landed
@@ -290,9 +295,9 @@ export class ManagedProcess {
   /**
    * The startup failure with the log's tail under it, so the report alone
    * says what the process was doing when it stalled or died. The message
-   * lands in the report, so `command.env` values are redacted from the quote
-   * with the same redactor and markers as the traces, the way the log itself
-   * never is. Without a log there is nothing to quote, and the message says
+   * lands in the report, so `command.env` and `inheritEnv` values are
+   * redacted from the quote with the same redactor and markers as the traces,
+   * the way the log itself never is. Without a log there is nothing to quote, and the message says
    * how to get one.
    */
   private unreachable(message: string, logOffset: number | undefined): InfrastructureError {
@@ -300,7 +305,7 @@ export class ManagedProcess {
       return new InfrastructureError('APP_UNREACHABLE', `${message}\nset log on this command to keep its output`);
     }
     const redact = createRedactor(
-      Object.entries(this.command.env ?? {}).filter(([, value]) => value.length >= REDACTED_ENV_MIN_LENGTH),
+      Object.entries({ ...this.inherited, ...this.command.env }).filter(([, value]) => value.length >= REDACTED_ENV_MIN_LENGTH),
     );
     const lines = this.outputSince(logOffset).map(redact);
     const detail =

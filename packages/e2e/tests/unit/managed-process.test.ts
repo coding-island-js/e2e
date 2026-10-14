@@ -5,6 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { inheritedEnv } from '../../src/config/command.ts';
 import { InfrastructureError } from '../../src/internal/errors.ts';
 import { ManagedProcess } from '../../src/run/managed-process.ts';
 import type { CommandConfig } from '../../src/types.ts';
@@ -256,6 +257,25 @@ describe('ManagedProcess stall diagnostics', () => {
     expect(fs.readFileSync(path.join(dir, log), 'utf8')).toContain('token=hunter2-hunter2');
   });
 
+  it('redacts inheritEnv values from the quoted output too', async () => {
+    vi.stubEnv('E2E_TEST_INHERITED_TOKEN', 'inherited-token-value');
+    try {
+      const app = new ManagedProcess(
+        'service "compose"',
+        stalled(`process.stdout.write('token=' + process.env.E2E_TEST_INHERITED_TOKEN + '\\n'); setInterval(() => {}, 1000);`, {
+          log,
+          inheritEnv: ['E2E_TEST_INHERITED_*'],
+        }),
+        dir,
+        { waitForExit: true },
+      );
+      const failure = await failureOf(app, 'token=');
+      expect(failure.message).toContain('  token=<secret:E2E_TEST_INHERITED_TOKEN>');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('points at log when the command has none', async () => {
     const app = new ManagedProcess(
       'service "compose"',
@@ -467,4 +487,72 @@ describe('ManagedProcess reuseExisting', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   }, 20_000);
+});
+
+describe('inheritedEnv', () => {
+  const source = { DATABASE_URL: 'postgres://db', STRIPE_KEY: 'sk', STRIPE_HOOK: 'wh', STRIPE: 'bare', OPENAI_API_KEY: 'model', UNSET: undefined } as NodeJS.ProcessEnv;
+
+  it('copies exact names and trailing-* prefixes that are set, nothing else', () => {
+    expect(inheritedEnv(['DATABASE_URL', 'STRIPE_*', 'UNSET', 'MISSING'], source)).toEqual({
+      DATABASE_URL: 'postgres://db',
+      STRIPE_KEY: 'sk',
+      STRIPE_HOOK: 'wh',
+    });
+    expect(inheritedEnv([], source)).toEqual({});
+  });
+
+  it('matches a name exactly, never as a prefix', () => {
+    expect(inheritedEnv(['STRIPE'], source)).toEqual({ STRIPE: 'bare' });
+  });
+});
+
+describe('ManagedProcess env', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-process-env-'));
+    vi.stubEnv('E2E_TEST_DATABASE_URL', 'postgres://from-host');
+    vi.stubEnv('E2E_TEST_STRIPE_KEY', 'sk_host');
+    vi.stubEnv('E2E_TEST_STRIPE_HOOK', 'wh_host');
+    vi.stubEnv('E2E_TEST_MODEL_KEY', 'model-key');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Runs a command that writes its own environment to `env.json` in the project root, and reads it back. */
+  const envOf = async (extra: Partial<CommandConfig>, runEnv?: NodeJS.ProcessEnv): Promise<Record<string, string>> => {
+    await new ManagedProcess(
+      'app.command',
+      { executable: process.execPath, args: ['-e', `require('node:fs').writeFileSync('env.json', JSON.stringify(process.env))`], cwd: dir, ...extra },
+      dir,
+      { waitForExit: true },
+      runEnv === undefined ? {} : { env: runEnv },
+    ).start();
+    return JSON.parse(fs.readFileSync(path.join(dir, 'env.json'), 'utf8')) as Record<string, string>;
+  };
+
+  it('passes only the default set without inheritEnv', async () => {
+    const env = await envOf({});
+    expect(Object.keys(env).filter((key) => key.startsWith('E2E_TEST_'))).toEqual([]);
+  });
+
+  it('copies listed variables, leaves the rest out, and lets command.env win', async () => {
+    const env = await envOf({
+      inheritEnv: ['E2E_TEST_DATABASE_URL', 'E2E_TEST_STRIPE_*'],
+      env: { E2E_TEST_STRIPE_HOOK: 'wh_config' },
+    });
+    expect(env).toMatchObject({
+      E2E_TEST_DATABASE_URL: 'postgres://from-host',
+      E2E_TEST_STRIPE_KEY: 'sk_host',
+      E2E_TEST_STRIPE_HOOK: 'wh_config',
+    });
+    expect(env).not.toHaveProperty('E2E_TEST_MODEL_KEY');
+  });
+
+  it('copies from the environment the run resolves against, not process.env, when one is passed', async () => {
+    const env = await envOf({ inheritEnv: ['E2E_TEST_DATABASE_URL', 'E2E_TEST_STRIPE_*'] }, { E2E_TEST_DATABASE_URL: 'postgres://per-task' });
+    expect(env).toMatchObject({ E2E_TEST_DATABASE_URL: 'postgres://per-task' });
+    expect(env).not.toHaveProperty('E2E_TEST_STRIPE_KEY');
+  });
 });
