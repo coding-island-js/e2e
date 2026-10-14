@@ -76,22 +76,6 @@ function inheritPattern(value: unknown, label: string): string {
 }
 
 /**
- * The variables of `source` that `patterns` name: an exact name, or every
- * name starting with a prefix that ends in `*`. Only variables that are set
- * are copied.
- */
-export function inheritedEnv(patterns: readonly string[], source: NodeJS.ProcessEnv): Record<string, string> {
-  const prefixes = patterns.filter((pattern) => pattern.endsWith('*')).map((pattern) => pattern.slice(0, -1));
-  const names = new Set(patterns.filter((pattern) => !pattern.endsWith('*')));
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (value === undefined) continue;
-    if (names.has(key) || prefixes.some((prefix) => key.startsWith(prefix))) env[key] = value;
-  }
-  return env;
-}
-
-/**
  * Checks the shape of one command and returns a frozen copy: only the keys a
  * command takes, a non-empty executable, string args and env values,
  * `inheritEnv` names and trailing-`*` prefixes, when set positive integer

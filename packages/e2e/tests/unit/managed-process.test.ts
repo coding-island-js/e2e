@@ -5,7 +5,6 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { inheritedEnv } from '../../src/config/command.ts';
 import { InfrastructureError } from '../../src/internal/errors.ts';
 import { ManagedProcess } from '../../src/run/managed-process.ts';
 import type { CommandConfig } from '../../src/types.ts';
@@ -489,23 +488,6 @@ describe('ManagedProcess reuseExisting', () => {
   }, 20_000);
 });
 
-describe('inheritedEnv', () => {
-  const source = { DATABASE_URL: 'postgres://db', STRIPE_KEY: 'sk', STRIPE_HOOK: 'wh', STRIPE: 'bare', OPENAI_API_KEY: 'model', UNSET: undefined } as NodeJS.ProcessEnv;
-
-  it('copies exact names and trailing-* prefixes that are set, nothing else', () => {
-    expect(inheritedEnv(['DATABASE_URL', 'STRIPE_*', 'UNSET', 'MISSING'], source)).toEqual({
-      DATABASE_URL: 'postgres://db',
-      STRIPE_KEY: 'sk',
-      STRIPE_HOOK: 'wh',
-    });
-    expect(inheritedEnv([], source)).toEqual({});
-  });
-
-  it('matches a name exactly, never as a prefix', () => {
-    expect(inheritedEnv(['STRIPE'], source)).toEqual({ STRIPE: 'bare' });
-  });
-});
-
 describe('ManagedProcess env', () => {
   let dir: string;
   beforeEach(() => {
@@ -514,6 +496,7 @@ describe('ManagedProcess env', () => {
     vi.stubEnv('E2E_TEST_STRIPE_KEY', 'sk_host');
     vi.stubEnv('E2E_TEST_STRIPE_HOOK', 'wh_host');
     vi.stubEnv('E2E_TEST_MODEL_KEY', 'model-key');
+    vi.stubEnv('E2E_TEST_DATABASE_URL_RO', 'postgres://replica');
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -548,11 +531,29 @@ describe('ManagedProcess env', () => {
       E2E_TEST_STRIPE_HOOK: 'wh_config',
     });
     expect(env).not.toHaveProperty('E2E_TEST_MODEL_KEY');
+    expect(env).not.toHaveProperty('E2E_TEST_DATABASE_URL_RO');
   });
 
   it('copies from the environment the run resolves against, not process.env, when one is passed', async () => {
     const env = await envOf({ inheritEnv: ['E2E_TEST_DATABASE_URL', 'E2E_TEST_STRIPE_*'] }, { E2E_TEST_DATABASE_URL: 'postgres://per-task' });
     expect(env).toMatchObject({ E2E_TEST_DATABASE_URL: 'postgres://per-task' });
     expect(env).not.toHaveProperty('E2E_TEST_STRIPE_KEY');
+  });
+
+  it('matches and replaces names case-insensitively on Windows', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      const env = await envOf(
+        { inheritEnv: ['E2E_TEST_DATABASE_URL', 'E2E_TEST_STRIPE_*'], env: { e2e_test_stripe_key: 'sk_config' } },
+        { E2e_Test_Database_Url: 'postgres://host', E2E_Test_Stripe_Key: 'sk_host' },
+      );
+      expect(Object.entries(env).filter(([key]) => key.toUpperCase().startsWith('E2E_TEST_'))).toEqual([
+        ['E2e_Test_Database_Url', 'postgres://host'],
+        ['e2e_test_stripe_key', 'sk_config'],
+      ]);
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
   });
 });

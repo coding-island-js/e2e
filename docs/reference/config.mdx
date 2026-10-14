@@ -395,19 +395,19 @@ export interface CommandConfig {
 output, so keep it in an ignored directory. A startup failure quotes the last
 20 lines appended since the command started, with `command.env` and
 `inheritEnv` values replaced by `<secret:NAME>` markers. Without
-`reuseExisting`, a `readyUrl` that already answers is `APP_ALREADY_RUNNING`. `reuseExisting` on an app
-whose `app.url` asks for port 0 is `INVALID_CONFIG`: a process already
-running cannot serve the port the run assigns.
+`reuseExisting`, a `readyUrl` that already answers is `APP_ALREADY_RUNNING`.
+`reuseExisting` on an app whose `app.url` asks for port 0 is
+`INVALID_CONFIG`: a process already running cannot serve the port the run
+assigns.
 
 The child inherits only `PATH`, `HOME`, the temp-directory variables, the
-variables `inheritEnv` names, and `command.env`, so pass what the app needs
-explicitly. `inheritEnv` takes exact names and trailing-`*` prefixes and
-copies a variable only when it is set, so a host can pass per-run values such
-as a database URL without editing the config. Anything else, a bare `*` or a
-`*` mid-name included, is `INVALID_CONFIG`. Every `args` entry and
-`env` value is a string; anything else, a number or a `secrets.get()` handle
-included, is `INVALID_CONFIG`, except an `undefined` `env` value, which is
-dropped. The runner never terminates a process it did not start.
+variables `inheritEnv` matches, and `command.env`, so pass what the app needs
+explicitly. `inheritEnv` takes names or trailing-`*` prefixes and copies a
+variable only when it is set; `env` wins. A bare `*` is `INVALID_CONFIG`.
+Every `args` entry and `env` value is a string; anything else, a number or a
+`secrets.get()` handle included, is `INVALID_CONFIG`, except an `undefined`
+`env` value, which is dropped. The runner never terminates a process it did
+not start.
 
 ### services
 

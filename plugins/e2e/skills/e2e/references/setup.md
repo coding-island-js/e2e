@@ -179,7 +179,7 @@ target's `app`:
 | `bundleId` | Device targets: the bundle id, package name, or display name (`Settings`) `app.open()` launches. |
 | `appPath` | Device targets: the `.app` or `.apk` under test. A device target needs `bundleId` or `appPath`. |
 | `launchArguments`, `permissions` | Device targets: arguments and permission states (`grant`, `deny`, `reset`) every fresh launch gets. |
-| `command` | The process serving `url`: `{ executable, args, cwd, env, startupTimeout, shutdownTimeout, log, reuseExisting }`; `{port}` in `args` and `env` expands to `url`'s port. Targets declaring the same command share one process. |
+| `command` | The process serving `url`: `{ executable, args, cwd, env, inheritEnv, startupTimeout, shutdownTimeout, log, reuseExisting }`; `{port}` in `args` and `env` expands to `url`'s port. Targets declaring the same command share one process. |
 | `readyUrl` | Readiness probe when it differs from `url`; `{port}` expands too. |
 | `environment` | `'test'`, `'staging'`, `'production'`; inferred from the host, labels the report and cache key. |
 | `identity` | Stable identity for cache and session keys when the origin changes per deploy (preview URLs). Defaults to the URL's origin and path, else `bundleId`, else `appPath`. |
@@ -259,8 +259,10 @@ app: {
   last run's report and results as they were (`command.log` still gets this
   boot's output).
 - The child gets only `PATH`, `HOME`, the temp-directory variables,
-  `SystemRoot` and `COMSPEC` on Windows, and `command.env`; pass the rest
-  through `env`. Model keys and `E2E_USER_*` values are never inherited.
+  `SystemRoot` and `COMSPEC` on Windows, and `command.env`. Pass the rest
+  through `env`, or name host variables in `inheritEnv` (`['DATABASE_URL',
+  'STRIPE_*']`); `env` wins over them. Model keys and `E2E_USER_*` values
+  are never inherited unless an `inheritEnv` name or prefix matches them.
 - Output is discarded unless `log` names a file under an ignored directory
   such as `.e2e/logs/`; without it a server dying on boot is invisible.
 - A `url` answering before the spawn is `APP_ALREADY_RUNNING`;

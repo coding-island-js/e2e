@@ -262,7 +262,7 @@ app: {
   `SystemRoot` and `COMSPEC` on Windows, and `command.env`. Pass the rest
   through `env`, or name host variables in `inheritEnv` (`['DATABASE_URL',
   'STRIPE_*']`); `env` wins over them. Model keys and `E2E_USER_*` values
-  are never inherited unless listed.
+  are never inherited unless an `inheritEnv` name or prefix matches them.
 - Output is discarded unless `log` names a file under an ignored directory
   such as `.e2e/logs/`; without it a server dying on boot is invisible.
 - A `url` answering before the spawn is `APP_ALREADY_RUNNING`;
