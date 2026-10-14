@@ -47,6 +47,11 @@ installing dependencies. A flag per question overrides one default:
 `--engine`, `--gateway`, `--endpoint`, `--skills`, `--mcp` (comma-separated
 locations, or `none`), `--install`; `npx e2e init --help` lists the values.
 
+The wizard needs a terminal: without one, `init` exits with code 2. From an
+agent's shell, run `npx e2e init --yes` when its defaults fit and install the
+dependencies after it, or install by hand (below). Neither registers the MCP
+server for Codex (topic `mcp`).
+
 Init adds dependencies and a `test:e2e` script to `package.json`, writes
 `e2e.config.ts` and `tests/example.e2e.ts`, updates `.gitignore`, leaves
 existing configs and tests alone. Re-run after upgrading to refresh skill and
