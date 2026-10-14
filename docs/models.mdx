@@ -87,7 +87,7 @@ Install `@ai-sdk/openai-compatible`. Set the endpoint URL and a model ID the
 endpoint serves. Add `apiKey` if the server needs one. Set
 `supportsStructuredOutputs: true` when the server accepts a JSON schema
 response format, as Ollama does. Without it, the AI SDK drops the schema with a
-`responseFormat` warning and agent steps take more model calls:
+`responseFormat` warning and agent steps may take more model calls:
 
 ```ts title="Model setup"
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
