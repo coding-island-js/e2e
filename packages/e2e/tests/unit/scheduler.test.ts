@@ -526,6 +526,19 @@ describe('time limit', () => {
     expect(collected.runErrors).toEqual([]);
   });
 
+  it('ignores a time limit longer than the longest timer instead of firing at once', async () => {
+    const target = makeTarget('web', 0);
+    const pairs = ['a', 'b'].map((name) => makePair(makeTest(`tests/${name}.e2e.ts`, name), target));
+    const fleet = new FakeFleet();
+    const collected = await run(makeSelection([{ target, pairs }]), makeCollection(pairs.map((pair) => pair.test.file), pairs), fleet, {
+      workers: 1,
+      maxDuration: 2 ** 31,
+    });
+    expect(collected.results.map((result) => result.status)).toEqual(['passed', 'passed']);
+    expect(collected.timeLimits).toEqual([]);
+    expect(fleet.interruptSkips).toEqual([]);
+  });
+
   it('lets a run that ends within the time finish whole', async () => {
     const target = makeTarget('web', 0);
     const pairs = ['a', 'b'].map((name) => makePair(makeTest(`tests/${name}.e2e.ts`, name), target));

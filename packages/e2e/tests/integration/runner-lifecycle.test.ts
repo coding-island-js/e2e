@@ -809,6 +809,18 @@ test('never started either', async () => {});
       expect(stopped.report.run.errors.map((error) => [error.code, error.category])).toEqual([['RUN_TIMEOUT', 'test']]);
       assertValidReport(stopped.report);
 
+      // The config's own maxDuration stops the run with no flag.
+      writeFileSync(path.join(project.dir, 'e2e.config.ts'), workerFakeConfigSource(1, '\n  maxDuration: 2_000,'));
+      const configStopped = await runExistingWithConfigFile(project, {});
+      expect(configStopped.exitCode).toBe(1);
+      expect(configStopped.report.run.errors.map((error) => [error.code, error.message])).toEqual([
+        ['RUN_TIMEOUT', 'run stopped at its time limit of 2000 ms (maxDuration): the running tests end as interrupted, the rest are skipped'],
+      ]);
+      expect(resultByTitle(configStopped, 'sleeps past the limit').status).toBe('interrupted');
+      for (const title of ['never started', 'never started either']) {
+        expect(resultByTitle(configStopped, title).skip?.cause).toBe('time-limit');
+      }
+
       writeFileSync(path.join(project.dir, 'tests', 'first.e2e.ts'), sleeping.replace('setTimeout(resolve, 60_000)', 'setTimeout(resolve, 0)'));
       const rerun = await runExistingWithConfigFile(project, { runOptions: { lastFailed: true } });
       expect(rerun.exitCode).toBe(0);

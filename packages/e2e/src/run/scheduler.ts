@@ -14,6 +14,7 @@ import type { AiTraceSnapshot } from '../internal/ai-trace.ts';
 import type { DebugSnapshot } from '../internal/debug.ts';
 import { InfrastructureError, type SerializedError, TestTimeoutError, serializeError } from '../internal/errors.ts';
 import { timestamp, uuidv7 } from '../internal/ids.ts';
+import { MAX_TIMER_MS } from '../internal/time.ts';
 import type { AttemptRecord, ResultRecord, RunError, SerialGroupRecord } from './records.ts';
 import { retryVerdict } from './retry.ts';
 import { SerialGroupProgress, serialGroupId } from './serial.ts';
@@ -439,7 +440,9 @@ class Scheduler {
     this.options.interruptSignal.addEventListener('abort', onInterrupt, { once: true });
     this.options.forceSignal.addEventListener('abort', onInterrupt, { once: true });
     const maxDuration = this.options.maxDuration;
-    const timeLimit = maxDuration === undefined ? undefined : setTimeout(() => this.timeUp(maxDuration), maxDuration);
+    // A limit past the longest timer outlasts any run, so it needs no timer.
+    const timeLimit =
+      maxDuration === undefined || maxDuration > MAX_TIMER_MS ? undefined : setTimeout(() => this.timeUp(maxDuration), maxDuration);
     try {
       for (;;) {
         this.broadcastInterrupt();
